@@ -47,19 +47,25 @@ function Confirmed([string]$txid, [int]$secs = 120) {
 try {
     LayOut @('keystore', 'manager', 'kcli', 'scli', 'core', 'node', 'backend', 'cli')
     FreshChain
+    # On regtest the core takes bitcoin_node_module's routes once it routes anything: the chain's
+    # servers and Kyoto's peers go to the node module, the core's regtest.json keeps poll and quorum.
     $urls = ElectrumUrls
-    $peers = (FilterPeers | ForEach-Object { "`"$_`"" }) -join ','
-    $regtest = @{
-        electrum = "{`"electrum`":[`"$($urls[0])`",`"$($urls[1])`"],`"pollSecs`":1}"
-        kyoto    = "{`"kyoto`":[$peers],`"electrum`":[`"$($urls[0])`"],`"checkOnly`":true,`"kyotoRequired`":2,`"pollSecs`":1}"
+    $regtest = '{"pollSecs":1,"kyotoRequired":2}'
+    $server = { param($i, $history) '{"id":"electrum-' + $i + '","kind":"electrum","url":"' + $urls[$i] + '","operator":"electrs-' + $i + '","label":"electrs ' + $i + '","use":true,"history":' + $history + ',"tor":false}' }
+    $sources = @{
+        electrum = '[{"id":"kyoto","kind":"kyoto","use":false},' + (& $server 0 'true') + ',' + (& $server 1 'true') + ']'
+        kyoto    = '[{"id":"kyoto","kind":"kyoto","use":true},' + (& $server 0 'false') + ']'
     }[$Authority]
-    Log "authority $Authority; core regtest.json $regtest"
+    $ownPeers = '[' + ((FilterPeers | ForEach-Object { '"' + $_ + '"' }) -join ',') + ']'
+    Log "authority $Authority; node module sources $sources"
     KeystoreSide
     Log "load cli (and the backend, core and node module it needs): $(Cut (Ctl module load $CLI --json) 300)"
     Start-Sleep -Seconds 2
-    # Test-only files: regtest for the three, the core's servers, the CLI as a custodian.
+    # Test-only files: regtest for the four (the core's poll and quorum), the node module open to
+    # logosctl's calls, the CLI as a custodian.
     [IO.File]::WriteAllText("$(Inst $CORE)\regtest.json", $regtest)
     [IO.File]::WriteAllText("$(Inst 'bitcoin_node_module')\regtest.json", '{}')
+    [IO.File]::WriteAllText("$(Inst 'bitcoin_node_module')\callers.json", '{"modules":[],"allowHost":true}')
     [IO.File]::WriteAllText("$(Inst $BACKEND)\regtest.json", '{}')
     [IO.File]::WriteAllText("$(Inst $BACKEND)\roles.json", '{"custodians":["bitcoin_wallet_ui","bitcoin_wallet_cli"]}')
     foreach ($m in $CLI, $BACKEND, 'bitcoin_node_module', $CORE) { Ctl module unload $m | Out-Null }
@@ -67,6 +73,11 @@ try {
     Start-Sleep -Seconds 2
     Log "cli status: $(Cut (BtcCli status) 200)"
     Log "network: $(Cut (BtcCli set_active_network regtest) 120)"
+    $NODE = 'bitcoin_node_module'
+    Log "node init_defaults: $(Cut (Call $NODE init_defaults) 160)"
+    if ($Authority -eq 'kyoto') { Log "node set_own_peers: $(Cut (Call $NODE set_own_peers regtest (F 'peers.json' $ownPeers)) 200)" }
+    Log "node set_sources: $(Cut (Call $NODE set_sources regtest (F 'sources.json' $sources)) 200)"
+    Log "node route_table: $(Cut (Call $NODE route_table regtest) 400)"
 
     # Open: the core asks the manager; evm_keystore_cli decides.
     $t0 = Get-Date
@@ -135,6 +146,9 @@ try {
     $st = WaitSend $s4 @('sent', 'failed', 'unknown', 'cancelled')
     Log "SENT AFTER RESTART ${s4}: state $($st.state), txid $($st.txid); in the mining node's mempool after $(WaitPool $st.txid) s; height $(Mine 1)"
     Confirmed $st.txid
+    # A send the backend left unknown should read sent once its transaction confirms.
+    $after = J (Until 60 { param($v) $v.state -eq 'sent' } @($CLI, 'send_status', $s4))
+    Log "CONFIRMED AFTER RESTART ${s4}: state $($after.state)$(if ($after.error) { ', ' + (Cut $after.error 120) })"
     $sends = ((J (BtcCli list_sends)).sends | ForEach-Object { "$($_.requestId) $($_.state)" }) -join ', '
     Log "sends: $sends"
     Log "wallet: $(Cut (BtcCli wallet_status) 200)"
