@@ -1,0 +1,6 @@
+# Paths below are relative to the work dir: run-node.ps1 starts tor there.
+SocksPort 19150
+DataDirectory tordata
+GeoIPFile C:\tor\data\geoip
+GeoIPv6File C:\tor\data\geoip6
+Log notice file tor.log
