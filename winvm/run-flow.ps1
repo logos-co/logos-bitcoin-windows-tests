@@ -1,9 +1,10 @@
 # The wallet on Windows under logosctl, against the regtest chain on framework, reached directly
 # under the LAN rule: open (evm_keystore_cli), receive, send (evm_signer_cli), confirm, a fee bump,
 # close and reopen. -Authority electrum: the Electrum header chain; kyoto: Kyoto, electrs only checks.
-# -Race mines right after the bump's broadcast, so the original may confirm first.
-param([ValidateSet('electrum', 'kyoto')][string]$Authority = 'electrum', [switch]$Race)
-$RUN = "flow-$Authority$(if ($Race) { '-race' })"
+# -Race mines right after the bump's broadcast, so the original may confirm first. -CoreDir: the
+# core's build under mods\ (not $Core: PowerShell would read it as lib.ps1's $CORE).
+param([ValidateSet('electrum', 'kyoto')][string]$Authority = 'electrum', [switch]$Race, [string]$CoreDir = 'core')
+$RUN = "flow-$Authority$(if ($Race) { '-race' })$(if ($CoreDir -ne 'core') { '-' + $CoreDir })"
 # Script blocks from the files' text: this machine's execution policy refuses .ps1 files.
 $BW = if ($env:BTC_WIN_DIR) { $env:BTC_WIN_DIR } else { "$env:USERPROFILE\bw" }
 . ([ScriptBlock]::Create([IO.File]::ReadAllText("$BW\lib.ps1")))
@@ -22,7 +23,7 @@ $regtest = @{
 $PAYEE = 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080'
 
 try {
-    LayOut @('keystore', 'manager', 'kcli', 'scli', 'core')
+    LayOut @('keystore', 'manager', 'kcli', 'scli', $CoreDir)
     Log "chain height: $(Rpc getblockcount); regtest.json $regtest"
     KeystoreSide
     LoadCore $regtest
@@ -85,6 +86,11 @@ try {
     Log "close: $(Cut (Job close_wallet '{}') 100)"
     $ms = Ms { $script:u = Ctl module unload $CORE --json }
     Log "UNLOAD: $(Cut $u 120) in $ms ms; $(Get-Content "$PERSIST\core.log" | Select-String 'unloaded in' | Select-Object -Last 1)"
+    # SQLCipher at rest: no wallet.db may start with SQLite's plaintext header.
+    foreach ($db in Get-ChildItem -Recurse -File -Filter 'wallet.db' $PERSIST) {
+        $head = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($db.FullName), 0, 15)
+        Log "AT REST $($db.Directory.Name)\wallet.db, $($db.Length) bytes: $(if ($head -eq 'SQLite format 3') { 'PLAINTEXT' } else { 'encrypted' })"
+    }
 } catch {
     Log "ERROR: $($_.Exception.Message) at $($_.InvocationInfo.PositionMessage)"
 } finally {
