@@ -43,7 +43,7 @@ refuses `.ps1` files, so `winrun.sh` and the scripts load each other as script b
 | `run-node.ps1 [-Runs 20]` | bitcoind_module: regtest -> signet (Tor) -> regtest in one host, unloads at the tip |
 | `run-localnode.ps1` | the wallet core with bitcoind_module as its authority |
 | `run-nodemod.ps1` | bitcoin_node_module: defaults, peer list, routes, a LAN server probed |
-| `run-backend.ps1` | backend and CLI: open, a CLI send, unknown then rebroadcast, abandoned, a backend restart mid-send |
+| `run-backend.ps1 [-Authority electrum\|kyoto]` | backend and CLI, the node module's regtest sources set: open, a CLI send, unknown then rebroadcast and abandoned (Electrum only), a backend restart mid-send |
 | `e2e-run.sh <spec>` (Git Bash) | the wallet app's full-Basecamp e2e, one spec's emitted Windows script (below) |
 
 Spike 4 is the wallet core's `storage.exe --ignored --nocapture` from `tools\`.
