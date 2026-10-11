@@ -41,7 +41,8 @@ try {
     $sent = J (SignApproved $prev.previewId)
     $txid = $sent.result.txid
     Log "SENT via $($sent.result.via): $txid broadcast $($sent.result.broadcast)"
-    Log "in the node's mempool: $(if ((J (NodeRpc getmempoolentry "[`"$txid`"]")).error -eq $null) { 'yes' } else { 'NO' })"
+    $entry = J (NodeRpc getmempoolentry ('["' + $txid + '"]'))
+    Log "in the node's mempool: $(if ($entry.error -eq $null -and $entry.result) { 'yes' } else { "NO: $($entry | ConvertTo-Json -Compress)" })"
     NodeMine 1 $PAYEE
     $h = Until 120 { param($v) @($v.rows | Where-Object { $_.txid -eq $txid -and $_.state -eq 'confirmed' }).Count -eq 1 } @($CORE, 'history', '0')
     Log "CONFIRMED: $(Cut ((J $h).rows | Where-Object { $_.txid -eq $txid } | ConvertTo-Json -Compress) 300)"

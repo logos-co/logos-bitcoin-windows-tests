@@ -41,6 +41,8 @@ class Chain:
         self.dir = os.environ.get("CHAIN_DIR", os.path.join(os.getcwd(), "chain"))
         self.ports = [int(p) for p in os.environ.get("ELECTRUM_PORTS", "60601,60611").split(",")]
         self.listen = os.environ.get("LISTEN", "127.0.0.1")
+        # electrs this service started: its children, reaped on stop, or kill(pid, 0) sees zombies.
+        self.children = {}
 
     def run(self, args, timeout=600):
         r = subprocess.run([self.script, *args], capture_output=True, text=True, timeout=timeout)
@@ -73,14 +75,23 @@ class Chain:
             if not os.path.exists(f):
                 continue
             pid = int(open(f).read().strip())
-            try:
-                os.kill(pid, signal.SIGTERM)
-                for _ in range(300):
-                    os.kill(pid, 0)
-                    time.sleep(0.1)
-                os.kill(pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            child = self.children.pop(pid, None)
+            if child is not None:
+                child.terminate()
+                try:
+                    child.wait(30)
+                except subprocess.TimeoutExpired:
+                    child.kill()
+                    child.wait()
+            else:
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                    for _ in range(300):
+                        os.kill(pid, 0)
+                        time.sleep(0.1)
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
             os.remove(f)
             stopped.append(pid)
         still = [p for p in self.ports if self.listening(p)]
@@ -103,6 +114,7 @@ class Chain:
                  "--electrum-rpc-addr", "%s:%d" % (self.listen, port), "--monitoring-addr", "127.0.0.1:%d" % (port + 1),
                  "--wait-duration-secs", "1"],
                 stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+            self.children[p.pid] = p
             with open(os.path.join(self.dir, "electrs%d.pid" % i), "w") as f:
                 f.write(str(p.pid))
         end = time.time() + 60
