@@ -24,6 +24,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -41,8 +42,20 @@ class Chain:
         self.dir = os.environ.get("CHAIN_DIR", os.path.join(os.getcwd(), "chain"))
         self.ports = [int(p) for p in os.environ.get("ELECTRUM_PORTS", "60601,60611").split(",")]
         self.listen = os.environ.get("LISTEN", "127.0.0.1")
-        # electrs this service started: its children, reaped on stop, or kill(pid, 0) sees zombies.
-        self.children = {}
+        # electrs this service started: reaped as they exit (chain.sh's stop kills them too), or
+        # kill -0 sees zombies and chain.sh's stop_pid waits its full 30 s for each.
+        self.children, self.exited = {}, set()
+        self.lock = threading.Lock()
+        threading.Thread(target=self.reap, daemon=True).start()
+
+    def reap(self):
+        while True:
+            with self.lock:
+                for pid, child in list(self.children.items()):
+                    if child.poll() is not None:
+                        del self.children[pid]
+                        self.exited.add(pid)
+            time.sleep(0.2)
 
     def run(self, args, timeout=600):
         r = subprocess.run([self.script, *args], capture_output=True, text=True, timeout=timeout)
@@ -75,7 +88,10 @@ class Chain:
             if not os.path.exists(f):
                 continue
             pid = int(open(f).read().strip())
-            child = self.children.pop(pid, None)
+            with self.lock:
+                child = self.children.pop(pid, None)
+                gone = pid in self.exited
+                self.exited.discard(pid)
             if child is not None:
                 child.terminate()
                 try:
@@ -83,7 +99,7 @@ class Chain:
                 except subprocess.TimeoutExpired:
                     child.kill()
                     child.wait()
-            else:
+            elif not gone:
                 try:
                     os.kill(pid, signal.SIGTERM)
                     for _ in range(300):
@@ -114,7 +130,8 @@ class Chain:
                  "--electrum-rpc-addr", "%s:%d" % (self.listen, port), "--monitoring-addr", "127.0.0.1:%d" % (port + 1),
                  "--wait-duration-secs", "1"],
                 stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-            self.children[p.pid] = p
+            with self.lock:
+                self.children[p.pid] = p
             with open(os.path.join(self.dir, "electrs%d.pid" % i), "w") as f:
                 f.write(str(p.pid))
         end = time.time() + 60
