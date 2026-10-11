@@ -2,7 +2,10 @@
 # chain on the Linux host: an open decided in evm_keystore_cli; a send relayed by the CLI and
 # approved in evm_signer_cli; a send whose outcome is unknown (both electrs down at the approval),
 # then rebroadcast; another one abandoned; and a backend restart with a send awaiting approval.
-$RUN = 'backend'
+# -Authority kyoto: Kyoto decides and broadcasts, electrs only checks; the unknown and abandoned
+# sends need electrs as the broadcast path, so that run leaves them out.
+param([ValidateSet('electrum', 'kyoto')][string]$Authority = 'electrum')
+$RUN = "backend$(if ($Authority -ne 'electrum') { '-' + $Authority })"
 # Script blocks from the files' text: this machine's execution policy refuses .ps1 files.
 $BW = if ($env:BTC_WIN_DIR) { $env:BTC_WIN_DIR } else { "$env:USERPROFILE\bw" }
 . ([ScriptBlock]::Create([IO.File]::ReadAllText("$BW\lib.ps1")))
@@ -42,10 +45,15 @@ function Confirmed([string]$txid, [int]$secs = 120) {
 }
 
 try {
-    LayOut @('keystore', 'manager', 'kcli', 'scli', 'core00d', 'node', 'backend', 'cli')
+    LayOut @('keystore', 'manager', 'kcli', 'scli', 'core', 'node', 'backend', 'cli')
     FreshChain
     $urls = ElectrumUrls
-    $regtest = "{`"electrum`":[`"$($urls[0])`",`"$($urls[1])`"],`"pollSecs`":1}"
+    $peers = (FilterPeers | ForEach-Object { "`"$_`"" }) -join ','
+    $regtest = @{
+        electrum = "{`"electrum`":[`"$($urls[0])`",`"$($urls[1])`"],`"pollSecs`":1}"
+        kyoto    = "{`"kyoto`":[$peers],`"electrum`":[`"$($urls[0])`"],`"checkOnly`":true,`"kyotoRequired`":2,`"pollSecs`":1}"
+    }[$Authority]
+    Log "authority $Authority; core regtest.json $regtest"
     KeystoreSide
     Log "load cli (and the backend, core and node module it needs): $(Cut (Ctl module load $CLI --json) 300)"
     Start-Sleep -Seconds 2
@@ -84,36 +92,38 @@ try {
     Confirmed $st.txid
     Log "CONFIRMED $($st.txid.Substring(0, 12)) in the CLI's history"
 
-    # Unknown: both electrs down when the person approves; rebroadcast once they are back.
-    $s2 = Ask '0.04'
-    $null = ElectrsStop
-    Approve $s2
-    $st = WaitSend $s2 @('sent', 'failed', 'unknown', 'cancelled') 180
-    $inPool = (Rpc getrawmempool) -contains $st.txid
-    Log "UNKNOWN ${s2}: state $($st.state), broadcast $($st.broadcast), txid $($st.txid); in the node's mempool: $inPool"
-    $null = ElectrsStart
-    Log "rebroadcast: $(Cut (BtcCli rebroadcast $s2) 200)"
-    $st = WaitSend $s2 @('sent') 120
-    Log "REBROADCAST ${s2}: state $($st.state); in the mining node's mempool after $(WaitPool $st.txid) s; height $(Mine 1)"
-    Confirmed $st.txid
+    if ($Authority -eq 'electrum') {
+        # Unknown: both electrs down when the person approves; rebroadcast once they are back.
+        $s2 = Ask '0.04'
+        $null = ElectrsStop
+        Approve $s2
+        $st = WaitSend $s2 @('sent', 'failed', 'unknown', 'cancelled') 180
+        $inPool = (Rpc getrawmempool) -contains $st.txid
+        Log "UNKNOWN ${s2}: state $($st.state), broadcast $($st.broadcast), txid $($st.txid); in the node's mempool: $inPool"
+        $null = ElectrsStart
+        Log "rebroadcast: $(Cut (BtcCli rebroadcast $s2) 200)"
+        $st = WaitSend $s2 @('sent') 120
+        Log "REBROADCAST ${s2}: state $($st.state); in the mining node's mempool after $(WaitPool $st.txid) s; height $(Mine 1)"
+        Confirmed $st.txid
 
-    # Abandoned: unknown again, then forgotten; its coins come back and it never leaves.
-    Start-Sleep -Seconds 3
-    $before = (J (BtcCli balances)).confirmed
-    $s3 = Ask '0.03'
-    $null = ElectrsStop
-    Approve $s3
-    $st = WaitSend $s3 @('sent', 'failed', 'unknown', 'cancelled') 180
-    Log "unknown ${s3}: state $($st.state), txid $($st.txid)"
-    # Built outside the log string: an escaped quote nested in $() in a string cuts the inner one.
-    $doc = F 'abandon.json' ('{"txid":"' + $st.txid + '"}')
-    Log "abandon_send: $(Cut (BtcCli abandon_send $doc) 200)"
-    $ab = J (Until 60 { param($v) $v.abandoned -eq $true } @($CLI, 'send_status', $s3))
-    Log "ABANDONED ${s3}: state $($ab.state), abandoned $($ab.abandoned), offer $(@($ab.offer).Count)"
-    $null = ElectrsStart
-    Log "height $(Mine 1); in the node's mempool: $((Rpc getrawmempool) -contains $st.txid)"
-    $bal = Until 90 { param($v) $v.confirmed -eq $before } @($CLI, 'balances')
-    Log "coins back: confirmed $((J $bal).confirmed) (was $before)"
+        # Abandoned: unknown again, then forgotten; its coins come back and it never leaves.
+        Start-Sleep -Seconds 3
+        $before = (J (BtcCli balances)).confirmed
+        $s3 = Ask '0.03'
+        $null = ElectrsStop
+        Approve $s3
+        $st = WaitSend $s3 @('sent', 'failed', 'unknown', 'cancelled') 180
+        Log "unknown ${s3}: state $($st.state), txid $($st.txid)"
+        # Built outside the log string: an escaped quote nested in $() in a string cuts the inner one.
+        $doc = F 'abandon.json' ('{"txid":"' + $st.txid + '"}')
+        Log "abandon_send: $(Cut (BtcCli abandon_send $doc) 200)"
+        $ab = J (Until 60 { param($v) $v.abandoned -eq $true } @($CLI, 'send_status', $s3))
+        Log "ABANDONED ${s3}: state $($ab.state), abandoned $($ab.abandoned), offer $(@($ab.offer).Count)"
+        $null = ElectrsStart
+        Log "height $(Mine 1); in the node's mempool: $((Rpc getrawmempool) -contains $st.txid)"
+        $bal = Until 90 { param($v) $v.confirmed -eq $before } @($CLI, 'balances')
+        Log "coins back: confirmed $((J $bal).confirmed) (was $before)"
+    }
 
     # A backend restart with a send awaiting approval.
     $s4 = Ask '0.02'
