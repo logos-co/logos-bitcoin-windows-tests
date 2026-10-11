@@ -44,6 +44,7 @@ refuses `.ps1` files, so `winrun.sh` and the scripts load each other as script b
 | `run-localnode.ps1` | the wallet core with bitcoind_module as its authority |
 | `run-nodemod.ps1` | bitcoin_node_module: defaults, peer list, routes, a LAN server probed |
 | `run-backend.ps1` | backend and CLI: open, a CLI send, unknown then rebroadcast, abandoned, a backend restart mid-send |
+| `e2e-run.sh <spec>` (Git Bash) | the wallet app's full-Basecamp e2e, one spec's emitted Windows script (below) |
 
 Spike 4 is the wallet core's `storage.exe --ignored --nocapture` from `tools\`.
 
@@ -63,5 +64,22 @@ ssh winvm 'type bw\results-flow-kyoto.txt'
 CHAIN=~/btc-win-out/regtest-chain HOST=192.0.2.10 chain-host/stop.sh
 ```
 
-The full-Basecamp end-to-end test lives with the wallet app (logos-bitcoin-wallet-ui,
-`doctests/e2e/drive.py`): on Windows it takes the same chain through `E2E_CHAIN_URL`.
+## The full-Basecamp e2e
+
+The test lives with the wallet app (logos-bitcoin-wallet-ui, `doctests/basecamp-e2e*.test.yaml`
+driven by `doctests/e2e/drive.py`); on Windows it takes the same chain through `E2E_CHAIN_URL`.
+Under the work dir's `e2e\`:
+
+```
+repo\doctests\        the wallet app's doctests (drive.py)
+work\e2e\build\<name>  the Windows builds the spec's Linux/macOS step builds with nix:
+                      basecamp (bin-bundle-dir-inspector), keystore, manager, keys, signer,
+                      backend, core, node, wallet (install-portable), and for the local-node
+                      spec bitcoind and bitcoindui
+<spec>.sh             doctest emit-smoke <spec>.test.yaml --platform windows -o <spec>.sh
+```
+
+`bash e2e-run.sh basecamp-e2e` (or `basecamp-e2e-kyoto`, `basecamp-e2e-node`) runs one script as
+logos-windows-ci's native leg would, from a clean user dir, and prints the driver's PASS and
+PHASE lines; `<spec>.log` and `<spec>.execs.json` hold the rest. It needs Git Bash, node and a
+native Windows Python as `python3` (the Store's is a stub; `ui\shim\python3` points at MSYS2's).
