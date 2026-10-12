@@ -51,6 +51,7 @@ refuses `.ps1` files, so `winrun.sh` and the scripts load each other as script b
 | `run-localnode.ps1` | the wallet core with bitcoind_module as its authority |
 | `run-nodemod.ps1` | bitcoin_node_module: defaults, peer list, routes, a LAN server probed |
 | `run-backend.ps1 [-Authority electrum\|kyoto]` | backend and CLI, the node module's regtest sources set: open, a CLI send, unknown then rebroadcast and abandoned (Electrum only), a backend restart mid-send |
+| `run-peers.ps1` | the Kyoto peer book: learned from a gossiping own peer (p2p_proxy.exe), then dialled from the book, outcomes in the node module's `kyoto_peers_regtest.json` |
 | `e2e-run.sh <spec>` (Git Bash) | the wallet app's full-Basecamp e2e, one spec's emitted Windows script (below) |
 
 Spike 4 is the wallet core's `storage.exe --ignored --nocapture` from `tools\`.
