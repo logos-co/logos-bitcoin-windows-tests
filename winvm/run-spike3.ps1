@@ -1,7 +1,7 @@
 # Spike 3 on Windows: the core unloaded from its logos_host while Kyoto syncs headers, while it
 # downloads filters, and idle; $Runs times each. Each cycle loads the core, reopens the wallet (no
 # reset, the first payment there), waits for the state, then unloads. Kyoto's three peers are the
-# framework chain's nodes behind p2p_proxy.exe here, slowed per state through its mode files.
+# chain host's nodes behind p2p_proxy.exe here, slowed per state through its mode files.
 param([int]$Runs = 20)
 $RUN = 'spike3'
 # Script blocks from the files' text: this machine's execution policy refuses .ps1 files.

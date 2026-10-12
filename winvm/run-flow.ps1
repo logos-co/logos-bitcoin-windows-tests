@@ -1,4 +1,4 @@
-# The wallet on Windows under logosctl, against the regtest chain on framework, reached directly
+# The wallet on Windows under logosctl, against the regtest chain on the chain host, reached directly
 # under the LAN rule: open (evm_keystore_cli), receive, send (evm_signer_cli), confirm, a fee bump,
 # close and reopen. -Authority electrum: the Electrum header chain; kyoto: Kyoto, electrs only checks.
 # -Race mines right after the bump's broadcast, so the original may confirm first. -CoreDir: the
@@ -11,9 +11,9 @@ $BW = if ($env:BTC_WIN_DIR) { $env:BTC_WIN_DIR } else { "$env:USERPROFILE\bw" }
 Set-Content -Path $OUT -Value "Bitcoin wallet regtest flow on Windows, authority $Authority, $(Get-Date -Format o)"
 $kind = @{ electrum = 'electrum_headers'; kyoto = 'kyoto' }[$Authority]
 FreshChain
-# One server by the chain host's .lan name, so the core's LAN rule for names runs too.
+# With $FWNAME, one server by the chain host's name, so the core's LAN rule for names runs too.
 $urls = ElectrumUrls
-$byName = $urls[0] -replace [regex]::Escape($FW), 'framework.lan'
+$byName = if ($FWNAME) { $urls[0] -replace [regex]::Escape($FW), $FWNAME } else { $urls[0] }
 $peers = (FilterPeers | ForEach-Object { "`"$_`"" }) -join ','
 $regtest = @{
     electrum = "{`"electrum`":[`"$byName`",`"$($urls[1])`"],`"pollSecs`":1}"

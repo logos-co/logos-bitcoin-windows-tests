@@ -1,6 +1,7 @@
 # Shared by the Bitcoin wallet runs on Windows: logosctl, the keystore side, jobs, and the regtest
 # chain on a Linux host through its chainctl (chain-host/). Dot-source it after setting $RUN.
-# $env:BTC_CHAINCTL names the service, http://<chain host>:28600 by default.
+# The service is $env:BTC_CHAINCTL, else the URL in bw\chainctl.url (http://<chain host>:28600);
+# $env:BTC_CHAIN_NAME, if set, is a name of the chain host, for the core's LAN rule on names.
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
 # logosctl writes UTF-8; PowerShell would decode it with the OEM code page.
@@ -8,8 +9,9 @@ $ProgressPreference = 'SilentlyContinue'
 $B = if ($env:BTC_WIN_DIR) { $env:BTC_WIN_DIR } else { "$env:USERPROFILE\bw" }
 $CTL = "$B\ctl\bin\logosctl.exe"
 $CORE = 'bitcoin_wallet_core_module'
-$CHAINCTL = if ($env:BTC_CHAINCTL) { $env:BTC_CHAINCTL } else { 'http://192.0.2.10:28600' }
+$CHAINCTL = if ($env:BTC_CHAINCTL) { $env:BTC_CHAINCTL } elseif (Test-Path "$B\chainctl.url") { [IO.File]::ReadAllText("$B\chainctl.url").Trim() } else { throw 'no chain host: set BTC_CHAINCTL or write bw\chainctl.url' }
 $FW = ([Uri]$CHAINCTL).Host
+$FWNAME = $env:BTC_CHAIN_NAME
 $SESS = "$B\$RUN\session"
 $OUT = "$B\results-$RUN.txt"
 $PDIR = "$B\$RUN\p"

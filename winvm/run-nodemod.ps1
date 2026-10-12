@@ -1,5 +1,5 @@
 # bitcoin_node_module on Windows under logosctl: defaults, the signed peer list verified, routes,
-# a server of your own on the LAN (framework's electrs) probed directly, then an unload.
+# a server of your own on the LAN (the chain host's electrs) probed directly, then an unload.
 $RUN = 'nodemod'
 # Script blocks from the files' text: this machine's execution policy refuses .ps1 files.
 $BW = if ($env:BTC_WIN_DIR) { $env:BTC_WIN_DIR } else { "$env:USERPROFILE\bw" }
@@ -24,7 +24,7 @@ try {
     Log "peer_list mainnet: $(Cut ($pl | ConvertTo-Json -Compress -Depth 3) 300)"
     $rt = J (Call $NM route_table signet)
     Log "route_table signet: proxy $($rt.proxy); kyoto peers $(@($rt.peers).Count); fees $(Cut (($rt.fees | ConvertTo-Json -Compress -Depth 4)) 200)"
-    $byName = (ElectrumUrls)[0] -replace [regex]::Escape($FW), 'framework.lan'
+    $byName = if ($FWNAME) { (ElectrumUrls)[0] -replace [regex]::Escape($FW), $FWNAME } else { (ElectrumUrls)[0] }
     $own = "[{`"id`":`"fw`",`"kind`":`"electrum`",`"url`":`"$byName`",`"use`":true,`"history`":true,`"tor`":false}]"
     Log "set_sources regtest (own LAN server): $(Cut (Call $NM set_sources regtest (F 'own.json' $own)) 400)"
     Log "set_sources regtest (a public host in plain text, refused): $(Cut (Call $NM set_sources regtest (F 'pub.json' '[{"id":"pub","kind":"electrum","url":"tcp://electrum.blockstream.info:50001","use":true,"history":false,"tor":false}]')) 200)"

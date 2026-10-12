@@ -11,7 +11,11 @@ spec="${1:?which spec}"
 BW="$(cygpath -u "${BTC_WIN_DIR:-$USERPROFILE\\bw}")"
 W="$BW/e2e/work"
 export E2E_REPO="$BW/e2e/repo" E2E_WORK="$W"
-export E2E_CHAIN_URL="${E2E_CHAIN_URL:-http://192.0.2.10:28600}" E2E_CHAIN_HOST="${E2E_CHAIN_HOST:-192.0.2.10}"
+# The chain host's chainctl: E2E_CHAIN_URL, else bw/chainctl.url; the wallet dials the URL's host.
+E2E_CHAIN_URL="${E2E_CHAIN_URL:-$(tr -d '\r\n' < "$BW/chainctl.url" 2>/dev/null)}"
+[ -n "$E2E_CHAIN_URL" ] || { echo "set E2E_CHAIN_URL or write bw/chainctl.url" >&2; exit 2; }
+host="${E2E_CHAIN_URL#*://}"; host="${host%%[:/]*}"
+export E2E_CHAIN_URL E2E_CHAIN_HOST="${E2E_CHAIN_HOST:-$host}"
 export E2E_INSPECTOR_PORT="${E2E_INSPECTOR_PORT:-3791}" EXECS_OUT="$BW/e2e/$spec.execs.json"
 # python3: a shim to MSYS2's native Windows Python (the Store's python3 is a stub).
 export PATH="$BW/ui/shim:$PATH"

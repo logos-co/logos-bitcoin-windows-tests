@@ -27,11 +27,18 @@ The wallet reaches the servers and peers directly, under its LAN rule.
   mods\<name>\modules|plugins\   each module's packages.x86_64-windows.install-portable
   tools\                    the wallet core's packages.x86_64-windows.test-bin (storage.exe, p2p_proxy.exe)
   lib.ps1, run-*.ps1, torrc
+  chainctl.url              the chain host's chainctl, http://<its LAN address>:28600
   results-<run>.txt, <run>\session, <run>\home   written by each run
 ```
 
+The machines are named by address, never by a name the LAN may stop resolving: `chainctl.url` (or
+`BTC_CHAINCTL`) on Windows, `HOST` and `CLIENT` for the chain host, whose bitcoind whitelist is
+the /24 around `HOST` unless `WHITELIST` says otherwise. `BTC_CHAIN_NAME`, when set, is a name of
+the chain host that run-flow and run-nodemod give one server by, for the core's rule on names.
+
 `mac/stage.sh` copies a nix result from the Linux machine into `mods\<name>` (or another dir);
-`mac/winrun.sh <script> [args]` runs one script in one ssh session. The machine's execution policy
+`mac/winrun.sh <script> [args]` runs one script in one ssh session. Both take the ssh commands
+from `WIN_SSH` and `LINUX_SSH` (`ssh winvm`, `ssh chain-host` unless set). The machine's execution policy
 refuses `.ps1` files, so `winrun.sh` and the scripts load each other as script blocks.
 
 ## The runs
@@ -51,17 +58,19 @@ Spike 4 is the wallet core's `storage.exe --ignored --nocapture` from `tools\`.
 ## A run, end to end
 
 ```bash
-# Linux machine: build the chain wrapper and start the chain with its remote control
+# Linux machine (L = its LAN address, W = the Windows machine's): the chain and its remote control
 nix build <logos-bitcoin-wallet-core-module>#regtest-chain -o ~/btc-win-out/regtest-chain
-CHAIN=~/btc-win-out/regtest-chain HOST=192.0.2.10 CLIENT=192.0.2.20 chain-host/start.sh
-# this machine: copy the builds and the scripts over, then run
+CHAIN=~/btc-win-out/regtest-chain HOST=$L CLIENT=$W chain-host/start.sh
+# this machine: the ssh commands, the builds and the scripts, then a run
+export WIN_SSH="ssh -i <key> user@$W" LINUX_SSH="ssh -i <key> user@$L"
 mac/stage.sh ctl-bundle-dir ctl
 mac/stage.sh core-install-portable mods/core     # and so on per module
-scp winvm/*.ps1 winvm/torrc winvm:bw/
+scp -i <key> winvm/*.ps1 winvm/torrc user@$W:bw/
+$WIN_SSH "echo http://$L:28600> bw\chainctl.url"
 mac/winrun.sh run-flow.ps1 -Authority kyoto
-ssh winvm 'type bw\results-flow-kyoto.txt'
+$WIN_SSH 'type bw\results-flow-kyoto.txt'
 # Linux machine, at the end
-CHAIN=~/btc-win-out/regtest-chain HOST=192.0.2.10 chain-host/stop.sh
+CHAIN=~/btc-win-out/regtest-chain HOST=$L chain-host/stop.sh
 ```
 
 ## The full-Basecamp e2e
