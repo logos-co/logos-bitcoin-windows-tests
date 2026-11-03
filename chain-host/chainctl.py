@@ -29,7 +29,7 @@ import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 SUBCOMMANDS = {"start", "prepare", "mine", "fund", "reorg", "rpc", "electrum", "peers", "stop",
-               "pruned", "prune", "pruned-rpc", "esplora"}
+               "pruned", "prune", "pruned-rpc"}
 
 
 def env_int(name, default):
